@@ -72,7 +72,7 @@ mod lisp_parser {
         fn slice(&mut self, to: usize) -> &'program str {
             let slice = &self.program[..to];
             self.set_program(&self.program[to..]);
-            return slice;
+            slice
         }
 
         fn set_program(&mut self, new_program: &'program str) {
@@ -117,7 +117,7 @@ mod lisp_parser {
             }
             let program = self.program;
             self.set_program("");
-            return Ok(LispObject::String(program.to_string()));
+            Ok(LispObject::String(program.to_string()))
         }
 
         fn skip_whitespaces(&mut self) {
@@ -133,7 +133,7 @@ mod lisp_parser {
             self.skip_whitespaces();
             let opening_parenthesis_position = self.text_position;
             match self.next() {
-                None => return Ok(None),
+                None => Ok(None),
                 Some((_index, character)) => match character {
                     '(' => Ok(Some(self.parse_list()?)),
                     ')' => Err(LispParsingError::UnclosedParenthesis {
@@ -174,9 +174,7 @@ mod lisp_parser {
 
 pub use lisp_parser::{LispObject, LispParsingError, LispProgramParsingResult, TextPosition};
 
-pub fn parse_lisp_program<'program>(
-    program: &'program str,
-) -> lisp_parser::LispProgramParsingResult {
+pub fn parse_lisp_program(program: &str,) -> lisp_parser::LispProgramParsingResult {
     let mut parser = lisp_parser::LispParser::new(program);
     parser.parse_program()
 }
