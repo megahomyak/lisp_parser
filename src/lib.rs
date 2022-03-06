@@ -104,18 +104,18 @@ mod lisp_parser {
             }
         }
 
-        fn get_slicer(&self, start_index: usize) -> Slicer<'program> {
+        fn make_slicer(&self, start_index: usize) -> Slicer<'program> {
             Slicer::new(self.program, start_index)
         }
 
-        fn get_text_position(&self) -> TextPosition {
+        fn text_position(&self) -> TextPosition {
             self.program_wrapper.text_position
         }
 
         fn parse_string(&mut self, opening_quote_index: usize) -> LispObjectParsingResult {
-            let slicer = self.get_slicer(opening_quote_index);
-            let opening_quote_position = self.get_text_position();
-            for (index, character) in self.get_iterator() {
+            let slicer = self.make_slicer(opening_quote_index);
+            let opening_quote_position = self.text_position();
+            for (index, character) in self.make_iterator() {
                 if character == '"' {
                     return Ok(ParsedLispObject {
                         lisp_object: LispObject::String(slicer.slice(index)),
@@ -155,9 +155,9 @@ mod lisp_parser {
         }
 
         fn parse_word(&mut self, word_beginning_index: usize) -> LispObjectParsingResult {
-            let slicer = self.get_slicer(word_beginning_index);
+            let slicer = self.make_slicer(word_beginning_index);
             let mut last_successful_index = word_beginning_index;
-            for (index, character) in self.get_iterator() {
+            for (index, character) in self.make_iterator() {
                 if character.is_whitespace()
                     || character == '"'
                     || character == ')'
@@ -179,7 +179,7 @@ mod lisp_parser {
 
         fn skip_whitespaces(&mut self, current_character: (usize, char)) -> Option<(usize, char)> {
             let (mut index, mut character) = current_character;
-            let iterator = self.get_iterator();
+            let iterator = self.make_iterator();
             loop {
                 if !character.is_whitespace() {
                     return Some((index, character));
@@ -200,7 +200,7 @@ mod lisp_parser {
                 Some((index, character)) => match character {
                     '(' => Ok(Some(self.parse_list()?)),
                     ')' => Err(LispParsingError::UnexpectedClosingParenthesis {
-                        closing_parenthesis_position: self.get_text_position(),
+                        closing_parenthesis_position: self.text_position(),
                     }),
                     '"' => Ok(Some(self.parse_string(index)?)),
                     _ => Ok(Some(self.parse_word(index)?)),
@@ -208,13 +208,13 @@ mod lisp_parser {
             }
         }
 
-        fn get_iterator(&mut self) -> &mut Self {
+        fn make_iterator(&mut self) -> &mut Self {
             self.by_ref()
         }
 
         fn parse_list(&mut self) -> LispObjectParsingResult {
             let mut list = Vec::new();
-            let opening_parenthesis_position = self.get_text_position();
+            let opening_parenthesis_position = self.text_position();
             let (mut index, mut character);
             match self.next() {
                 None => {
