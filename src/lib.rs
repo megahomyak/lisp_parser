@@ -7,28 +7,60 @@ mod lisp_parser {
         pub column: usize,
     }
 
-    pub struct LispParser<'program> {
-        program: &'program str,
-        text_position: TextPosition,
+    struct ProgramWrapper<'program> {
         last_character_was_a_newline: bool,
         program_iterator: CharIndices<'program>,
+        text_position: TextPosition,
+    }
+
+    struct Slicer<'string> {
+        string: &'string str,
+        start_index: usize,
+    }
+
+    impl<'string> Slicer<'string> {
+        fn new(string: &'string str, start_index: usize) -> Self {
+            Self {
+                string,
+                start_index,
+            }
+        }
+
+        fn slice(&self, to: usize) -> String {
+            self.string[self.start_index..=to].to_string()
+        }
+    }
+
+    impl<'program> ProgramWrapper<'program> {
+        fn new(program: &'program str) -> Self {
+            Self {
+                last_character_was_a_newline: true,
+                program_iterator: program.char_indices(),
+                text_position: TextPosition { line: 0, column: 1 },
+            }
+        }
+    }
+
+    pub struct LispParser<'program> {
+        program: &'program str,
+        program_wrapper: ProgramWrapper<'program>,
     }
 
     impl<'program> Iterator for LispParser<'program> {
         type Item = (usize, char);
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.program_iterator.next() {
+            match self.program_wrapper.program_iterator.next() {
                 Some((index, character)) => {
-                    if self.last_character_was_a_newline {
-                        self.last_character_was_a_newline = false;
-                        self.text_position.column = 1;
-                        self.text_position.line += 1;
+                    if self.program_wrapper.last_character_was_a_newline {
+                        self.program_wrapper.last_character_was_a_newline = false;
+                        self.program_wrapper.text_position.column = 1;
+                        self.program_wrapper.text_position.line += 1;
                     } else {
-                        self.text_position.column += 1;
+                        self.program_wrapper.text_position.column += 1;
                     }
                     if character == '\n' {
-                        self.last_character_was_a_newline = true;
+                        self.program_wrapper.last_character_was_a_newline = true;
                     }
                     Some((index, character))
                 }
@@ -56,35 +88,39 @@ mod lisp_parser {
         List(Vec<LispObject>),
     }
 
-    type LispObjectParsingResult = Result<LispObject, LispParsingError>;
+    struct ParsedLispObject {
+        lisp_object: LispObject,
+        next_character_with_index: Option<(usize, char)>,
+    }
+
+    type LispObjectParsingResult = Result<ParsedLispObject, LispParsingError>;
     pub type LispProgramParsingResult = Result<Vec<LispObject>, LispParsingError>;
 
     impl<'program> LispParser<'program> {
         pub fn new(program: &'program str) -> Self {
             Self {
                 program,
-                text_position: TextPosition { line: 1, column: 1 },
-                last_character_was_a_newline: false,
-                program_iterator: program.char_indices(),
+                program_wrapper: ProgramWrapper::new(program),
             }
         }
 
-        fn slice(&mut self, to: usize) -> &'program str {
-            let slice = &self.program[..to];
-            self.set_program(&self.program[to..]);
-            slice
+        fn get_slicer(&self, start_index: usize) -> Slicer<'program> {
+            Slicer::new(self.program, start_index)
         }
 
-        fn set_program(&mut self, new_program: &'program str) {
-            self.program = new_program;
-            self.program_iterator = new_program.char_indices();
+        fn get_text_position(&self) -> TextPosition {
+            self.program_wrapper.text_position
         }
 
-        fn parse_string(&mut self) -> LispObjectParsingResult {
-            let opening_quote_position = self.text_position;
+        fn parse_string(&mut self, opening_quote_index: usize) -> LispObjectParsingResult {
+            let slicer = self.get_slicer(opening_quote_index);
+            let opening_quote_position = self.get_text_position();
             for (index, character) in self.get_iterator() {
                 if character == '"' {
-                    return Ok(LispObject::String(self.slice(index).to_string()));
+                    return Ok(ParsedLispObject {
+                        lisp_object: LispObject::String(slicer.slice(index)),
+                        next_character_with_index: self.next(),
+                    });
                 }
             }
             Err(LispParsingError::UnclosedQuote {
@@ -94,10 +130,23 @@ mod lisp_parser {
 
         pub fn parse_program(&mut self) -> LispProgramParsingResult {
             let mut list = Vec::new();
+            let (mut index, mut character);
+            match self.next() {
+                None => return Ok(list),
+                Some(character_with_index) => (index, character) = character_with_index,
+            }
             loop {
-                match self.parse_object() {
+                match self.parse_object((index, character)) {
                     Ok(optional_object) => match optional_object {
-                        Some(object) => list.push(object),
+                        Some(parsed_lisp_object) => {
+                            match parsed_lisp_object.next_character_with_index {
+                                None => return Ok(list),
+                                Some(character_with_index) => {
+                                    (index, character) = character_with_index
+                                }
+                            }
+                            list.push(parsed_lisp_object.lisp_object);
+                        }
                         None => return Ok(list),
                     },
                     Err(error) => return Err(error),
@@ -105,42 +154,56 @@ mod lisp_parser {
             }
         }
 
-        fn parse_word(&mut self) -> LispObjectParsingResult {
+        fn parse_word(&mut self, word_beginning_index: usize) -> LispObjectParsingResult {
+            let slicer = self.get_slicer(word_beginning_index);
+            let mut last_successful_index = word_beginning_index;
             for (index, character) in self.get_iterator() {
                 if character.is_whitespace()
                     || character == '"'
                     || character == ')'
                     || character == '('
                 {
-                    return Ok(LispObject::String(self.slice(index - 1).to_string()));
+                    return Ok(ParsedLispObject {
+                        lisp_object: LispObject::String(slicer.slice(last_successful_index)),
+                        next_character_with_index: Some((index, character)),
+                    });
+                } else {
+                    last_successful_index = index;
                 }
             }
-            let program = self.program;
-            self.set_program("");
-            Ok(LispObject::String(program.to_string()))
+            Ok(ParsedLispObject {
+                lisp_object: LispObject::String(self.program.to_string()),
+                next_character_with_index: None,
+            })
         }
 
-        fn skip_whitespaces(&mut self) {
-            for (index, character) in self.get_iterator() {
+        fn skip_whitespaces(&mut self, current_character: (usize, char)) -> Option<(usize, char)> {
+            let (mut index, mut character) = current_character;
+            let iterator = self.get_iterator();
+            loop {
                 if !character.is_whitespace() {
-                    self.set_program(&self.program[index..]);
-                    return;
+                    return Some((index, character));
+                }
+                match iterator.next() {
+                    Some(character_with_index) => (index, character) = character_with_index,
+                    None => return None,
                 }
             }
         }
 
-        fn parse_object(&mut self) -> Result<Option<LispObject>, LispParsingError> {
-            self.skip_whitespaces();
-            let opening_parenthesis_position = self.text_position;
-            match self.next() {
+        fn parse_object(
+            &mut self,
+            current_character: (usize, char),
+        ) -> Result<Option<ParsedLispObject>, LispParsingError> {
+            match self.skip_whitespaces(current_character) {
                 None => Ok(None),
-                Some((_index, character)) => match character {
+                Some((index, character)) => match character {
                     '(' => Ok(Some(self.parse_list()?)),
-                    ')' => Err(LispParsingError::UnclosedParenthesis {
-                        opening_parenthesis_position,
+                    ')' => Err(LispParsingError::UnexpectedClosingParenthesis {
+                        closing_parenthesis_position: self.get_text_position(),
                     }),
-                    '"' => Ok(Some(self.parse_string()?)),
-                    _ => Ok(Some(self.parse_word()?)),
+                    '"' => Ok(Some(self.parse_string(index)?)),
+                    _ => Ok(Some(self.parse_word(index)?)),
                 },
             }
         }
@@ -151,14 +214,38 @@ mod lisp_parser {
 
         fn parse_list(&mut self) -> LispObjectParsingResult {
             let mut list = Vec::new();
-            let opening_parenthesis_position = self.text_position;
+            let opening_parenthesis_position = self.get_text_position();
+            let (mut index, mut character);
+            match self.next() {
+                None => {
+                    return Err(LispParsingError::UnclosedParenthesis {
+                        opening_parenthesis_position,
+                    })
+                }
+                Some(character_with_index) => (index, character) = character_with_index,
+            }
             loop {
-                match self.parse_object() {
+                match self.parse_object((index, character)) {
                     Err(LispParsingError::UnexpectedClosingParenthesis { .. }) => {
-                        return Ok(LispObject::List(list))
+                        return Ok(ParsedLispObject {
+                            lisp_object: LispObject::List(list),
+                            next_character_with_index: self.next(),
+                        })
                     }
                     Ok(optional_object) => match optional_object {
-                        Some(object) => list.push(object),
+                        Some(parsed_lisp_object) => {
+                            match parsed_lisp_object.next_character_with_index {
+                                None => {
+                                    return Err(LispParsingError::UnclosedParenthesis {
+                                        opening_parenthesis_position,
+                                    })
+                                }
+                                Some(character_with_index) => {
+                                    (index, character) = character_with_index
+                                }
+                            }
+                            list.push(parsed_lisp_object.lisp_object)
+                        }
                         None => {
                             return Err(LispParsingError::UnclosedParenthesis {
                                 opening_parenthesis_position,
@@ -172,9 +259,9 @@ mod lisp_parser {
     }
 }
 
-pub use lisp_parser::{LispObject, LispParsingError, LispProgramParsingResult, TextPosition};
+pub use crate::lisp_parser::{LispObject, LispParsingError, LispProgramParsingResult, TextPosition};
 
-pub fn parse_lisp_program(program: &str,) -> lisp_parser::LispProgramParsingResult {
+pub fn parse_lisp_program(program: &str) -> lisp_parser::LispProgramParsingResult {
     let mut parser = lisp_parser::LispParser::new(program);
     parser.parse_program()
 }
@@ -220,7 +307,7 @@ mod tests {
             str("y"),
             str("z"),
         ];
-        assert_eq!(parse_lisp_program(&program).unwrap(), parsed_program,);
+        assert_eq!(parse_lisp_program(program).unwrap(), parsed_program,);
     }
 
     #[test]
@@ -266,4 +353,3 @@ mod tests {
         );
     }
 }
-
