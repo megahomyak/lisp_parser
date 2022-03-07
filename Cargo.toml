@@ -2,7 +2,12 @@
 name = "lisp_parser"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["megahomyak"]
+keywords = ["LISP", "parser"]
+categories = ["parser-implementations"]
+license = "MIT"
+description = "LISP parser library that converts a string into a list of strings or other lists"
+repository = "https://github.com/rust-lang/cargo/"
+homepage = "https://github.com/rust-lang/cargo/"
 
 [dependencies]
