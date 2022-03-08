@@ -1,13 +1,13 @@
 [package]
 name = "lisp_parser"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["megahomyak"]
 keywords = ["LISP", "parser"]
 categories = ["parser-implementations"]
 license = "MIT"
 description = "LISP parser library that converts a string into a list of strings or other lists"
-repository = "https://github.com/rust-lang/cargo/"
-homepage = "https://github.com/rust-lang/cargo/"
+repository = "https://github.com/megahomyak/lisp_parser/"
+homepage = "https://github.com/megahomyak/lisp_parser/"
 
 [dependencies]

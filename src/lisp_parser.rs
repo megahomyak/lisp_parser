@@ -26,7 +26,7 @@ impl<'string> Slicer<'string> {
     }
 
     fn slice(&self, to: usize) -> String {
-        self.string[self.start_index..=to].to_string()
+        self.string[self.start_index..=to].to_owned()
     }
 }
 
@@ -170,7 +170,7 @@ impl<'program> LispParser<'program> {
             last_successful_index = index;
         }
         ParsedLispObject {
-            lisp_object: LispObject::String(self.program.to_string()),
+            lisp_object: LispObject::String(slicer.slice(self.program.len())),
             next_character_with_index: None,
         }
     }
@@ -225,6 +225,7 @@ impl<'program> LispParser<'program> {
         loop {
             match self.parse_object((index, character)) {
                 Err(LispParsingError::UnexpectedClosingParenthesis { .. }) => {
+                    list.shrink_to_fit();
                     return Ok(ParsedLispObject {
                         lisp_object: LispObject::List(list),
                         next_character_with_index: self.next(),
